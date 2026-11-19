@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="國考倒數">
+  <title>護理師國考倒數與專注計時</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@600;700&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      color: #f8fafc;
+      min-height: 100vh;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass {
+      background: rgba(30, 41, 59, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .subject-btn.active {
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      border-color: #38bdf8;
+      color: #ffffff;
+      box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);
+    }
+  </style>
+</head>
+<body class="p-4 md:p-6 flex flex-col justify-between max-w-2xl mx-auto">
+
+  <!-- 頂部狀態與目標日期設定 -->
+  <header class="flex items-center justify-between mb-4 mt-2">
+    <div>
+      <h1 class="text-lg md:text-xl font-black tracking-wide text-sky-400 flex items-center gap-2">
+        🩺 護理師國考倒數系統
+      </h1>
+      <p id="syncStatus" class="text-xs text-sky-400 mt-0.5 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-sky-400 inline-block animate-pulse"></span>
+        正在同步 Google 試算表資料庫...
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="loadFromCloud()" title="手動重新同步" class="glass px-2.5 py-1.5 rounded-xl text-xs text-slate-300 hover:text-white active:scale-95 transition">
+        🔄
+      </button>
+      <button onclick="openDateModal()" class="glass px-3 py-1.5 rounded-xl text-xs text-slate-300 hover:text-white active:scale-95 transition flex items-center gap-1">
+        📅 <span id="targetDateLabel">2027/07/24</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 國考倒數核心區塊 -->
+  <section class="glass rounded-3xl p-5 mb-4 shadow-xl text-center relative overflow-hidden">
+    <div class="text-xs font-bold tracking-widest text-sky-300 uppercase mb-2">距離護理師專技高考還剩</div>
+    <div class="grid grid-cols-4 gap-2 md:gap-4 my-2">
+      <div class="bg-slate-900/70 rounded-2xl py-3 px-1 border border-slate-700/50">
+        <div id="cd-days" class="mono text-3xl md:text-4xl font-bold text-white">--</div>
+        <div class="text-[11px] text-slate-400 mt-1">天 (Days)</div>
+      </div>
+      <div class="bg-slate-900/70 rounded-2xl py-3 px-1 border border-slate-700/50">
+        <div id="cd-hours" class="mono text-3xl md:text-4xl font-bold text-sky-300">--</div>
+        <div class="text-[11px] text-slate-400 mt-1">時 (Hrs)</div>
+      </div>
+      <div class="bg-slate-900/70 rounded-2xl py-3 px-1 border border-slate-700/50">
+        <div id="cd-mins" class="mono text-3xl md:text-4xl font-bold text-indigo-300">--</div>
+        <div class="text-[11px] text-slate-400 mt-1">分 (Mins)</div>
+      </div>
+      <div class="bg-slate-900/70 rounded-2xl py-3 px-1 border border-slate-700/50">
+        <div id="cd-secs" class="mono text-3xl md:text-4xl font-bold text-amber-300">--</div>
+        <div class="text-[11px] text-slate-400 mt-1">秒 (Secs)</div>
+      </div>
+    </div>
+    <div class="mt-3 flex justify-between items-center text-xs text-slate-400 px-1">
+      <span>今日已專注：<strong id="todayTotalText" class="text-emerald-400 mono text-sm">0</strong> 分鐘</span>
+      <span>總累積時數：<strong id="allTotalText" class="text-sky-400 mono text-sm">0.0</strong> 小時</span>
+    </div>
+  </section>
+
+  <!-- 五大科專注計時器 -->
+  <section class="glass rounded-3xl p-5 mb-4 shadow-xl">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-bold text-slate-300">選擇目前複習科目</span>
+      <div class="flex gap-1.5">
+        <button onclick="setMode('stopwatch')" id="mode-stopwatch" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40">正計時</button>
+        <button onclick="setMode('pomodoro')" id="mode-pomodoro" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">番茄鐘 25m</button>
+      </div>
+    </div>
+
+    <!-- 五大科選擇鈕 -->
+    <div class="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
+      <button onclick="selectSubject('基礎醫學')" data-sub="基礎醫學" class="subject-btn active py-2 px-2 rounded-xl border border-slate-700 bg-slate-800/60 text-xs font-bold transition">基礎醫學</button>
+      <button onclick="selectSubject('內外科護理')" data-sub="內外科護理" class="subject-btn py-2 px-2 rounded-xl border border-slate-700 bg-slate-800/60 text-xs font-bold transition">內外科</button>
+      <button onclick="selectSubject('產兒科護理')" data-sub="產兒科護理" class="subject-btn py-2 px-2 rounded-xl border border-slate-700 bg-slate-800/60 text-xs font-bold transition">產兒科</button>
+      <button onclick="selectSubject('精神與社區')" data-sub="精神與社區" class="subject-btn py-2 px-2 rounded-xl border border-slate-700 bg-slate-800/60 text-xs font-bold transition">精神社區</button>
+      <button onclick="selectSubject('基本護理學')" data-sub="基本護理學" class="subject-btn py-2 px-2 rounded-xl border border-slate-700 bg-slate-800/60 text-xs font-bold transition">基護行政</button>
+    </div>
+
+    <!-- 計時顯示 -->
+    <div class="text-center my-4">
+      <div id="timerDisplay" class="mono text-5xl md:text-6xl font-bold tracking-wider text-white">00:00:00</div>
+      <div id="currentSubLabel" class="text-xs text-sky-400 mt-2 font-medium">準備專注：基礎醫學</div>
+    </div>
+
+    <!-- 控制按鈕 -->
+    <div class="flex gap-3 justify-center mt-5">
+      <button id="startPauseBtn" onclick="toggleTimer()" class="flex-1 max-w-[160px] py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg shadow-emerald-500/25 active:scale-95 transition">
+        ▶ 開始計時
+      </button>
+      <button onclick="finishAndSaveSession()" class="flex-1 max-w-[160px] py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-sm shadow-lg shadow-sky-500/25 active:scale-95 transition">
+        💾 結束並寫入雲端
+      </button>
+      <button onclick="resetTimerOnly()" class="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700 active:scale-95 transition">
+        歸零
+      </button>
+    </div>
+
+    <!-- 各科累積時數進度條 -->
+    <div class="mt-6 pt-4 border-t border-slate-700/60">
+      <div class="text-xs font-bold text-slate-400 mb-2.5 flex justify-between">
+        <span>五大科累積複習分佈（單位：分鐘）</span>
+        <span class="text-[11px] text-slate-500">雲端資料庫已綁定</span>
+      </div>
+      <div id="subjectStatsList" class="space-y-2 text-xs"></div>
+    </div>
+  </section>
+
+  <!-- 底部高頻國考重點輪播區 -->
+  <footer class="glass rounded-2xl p-4 border-l-4 border-l-amber-400 shadow-lg mb-2">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-xs font-black text-amber-400 flex items-center gap-1.5">
+        💡 國考高頻重點速記 <span id="tipTag" class="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 text-[10px]">藥理學</span>
+      </span>
+      <button onclick="nextTip()" class="text-[11px] text-slate-300 hover:text-amber-300 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 active:scale-95 transition">
+        換一則重點 ↻
+      </button>
+    </div>
+    <p id="tipContent" class="text-xs md:text-sm text-slate-200 leading-relaxed font-medium">
+      載入高頻考點中...
+    </p>
+  </footer>
+
+  <!-- 修改考試日期彈窗 -->
+  <div id="dateModal" class="fixed inset-0 bg-black/70 hidden items-center justify-center p-4 z-50">
+    <div class="glass rounded-2xl p-5 w-full max-w-xs border border-slate-600">
+      <h3 class="text-sm font-bold text-white mb-3">設定國考目標日期</h3>
+      <input type="date" id="examDateInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white mb-4">
+      <div class="flex justify-end gap-2">
+        <button onclick="closeDateModal()" class="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">取消</button>
+        <button onclick="saveExamDate()" class="px-4 py-1.5 rounded-lg text-xs bg-sky-500 text-slate-950 font-bold">儲存並同步</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 已內建綁定你的 Google Apps Script 雲端試算表資料庫網址
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbztbVfB2YYE4bibBLnlhqDROdE1Ci4TLa-T9cQJEhcBygk6SiXaa1kjJDmkECF7noYs/exec";
+    const STORAGE_KEY = "nursing_exam_timer_data";
+
+    const EXAM_TIPS = [
+      { tag: "藥理學", text: "毛地黃（Digoxin）抑制心肌 Na+/K+-ATPase 導致細胞內 Na+ 升高，減弱 Na+/Ca2+ 交換使 Ca2+ 留存而強心；給藥前心尖脈低於 60 次/分應停藥。" },
+      { tag: "藥理學", text: "低血鉀（Hypokalemia）會減少與毛地黃競爭鈉鉀幫浦的鉀離子而誘發毛地黃中毒（早期表現：厭食、噁心嘔吐、黃綠視）。" },
+      { tag: "藥理學", text: "變異性心絞痛（Prinzmetal's angina）首選 CCB 鬆弛冠狀動脈痙攣；禁用 β 阻斷劑，以免阻斷 β2 舒張受體留下 α1 單獨收縮。" },
+      { tag: "藥理學", text: "NTG 舌下錠發作時每 5 分鐘含 1 顆、最多 3 顆（15 分鐘內無效立即就醫）；須裝於深色避光玻璃瓶，嚴禁併用 Sildenafil。" },
+      { tag: "內外科", text: "亨利氏環利尿劑（Furosemide）把大量 Na+ 沖到下游集尿管，逼主細胞過度「留鈉排鉀」造成低血鉀，且會排鈣（可用於高血鈣症）。" },
+      { tag: "內外科", text: "ACEI / ARB 降壓藥與保鉀利尿劑（Spironolactone）抑制醛固酮「不留鈉也不排鉀」，最需密切監測高血鉀副作用。" },
+      { tag: "產兒科", text: "硫酸鎂（MgSO4）治療子癇前症預防抽搐，中毒早期徵象為深部肌腱反射（DTR）消失，解毒劑為 10% Calcium Gluconate。" },
+      { tag: "基本護理", text: "大量輸血（短時間輸入多袋庫存血）易因檸檬酸鹽與鈣結合導致低血鈣，以及紅血球破壞釋出鉀離子造成高血鉀。" },
+      { tag: "精神科", text: "鋰鹽（Lithium）治療濃度 0.6～1.2 mEq/L，超過 1.5 mEq/L 易中毒；腎臟將鋰視為鈉處理，低血鈉或脫水會大幅增加鋰鹽中毒風險。" }
+    ];
+
+    let state = {
+      targetDate: "2027-07-24",
+      todayDate: new Date().toLocaleDateString('zh-TW'),
+      todayMinutes: 0,
+      subjects: {
+        "基礎醫學": 0,
+        "內外科護理": 0,
+        "產兒科護理": 0,
+        "精神與社區": 0,
+        "基本護理學": 0
+      }
+    };
+
+    let currentSubject = "基礎醫學";
+    let timerMode = "stopwatch";
+    let isRunning = false;
+    let elapsedSeconds = 0;
+    let pomodoroTotalSeconds = 25 * 60;
+    let timerInterval = null;
+    let tipIndex = Math.floor(Math.random() * EXAM_TIPS.length);
+
+    window.onload = function() {
+      renderTip();
+      setInterval(nextTip, 15000);
+      startCountdown();
+
+      const cached = localStorage.getItem(STORAGE_KEY);
+      if (cached) {
+        try {
+          state = Object.assign(state, JSON.parse(cached));
+          checkNewDay();
+        } catch(e) {}
+      }
+      updateStatsUI();
+      loadFromCloud();
+    };
+
+    function checkNewDay() {
+      const todayStr = new Date().toLocaleDateString('zh-TW');
+      if (state.todayDate !== todayStr) {
+        state.todayDate = todayStr;
+        state.todayMinutes = 0;
+      }
+    }
+
+    function setSyncStatus(msg, color) {
+      const el = document.getElementById("syncStatus");
+      const dotColor = color === "emerald" ? "bg-emerald-400" : (color === "amber" ? "bg-amber-400" : "bg-sky-400");
+      const textColor = color === "emerald" ? "text-emerald-400" : (color === "amber" ? "text-amber-400" : "text-sky-400");
+      el.className = `text-xs ${textColor} mt-0.5 flex items-center gap-1.5`;
+      el.innerHTML = `<span class="w-2 h-2 rounded-full ${dotColor} inline-block"></span>${msg}`;
+    }
+
+    async function loadFromCloud() {
+      setSyncStatus("正在從 Google 試算表載入...", "sky");
+      try {
+        const res = await fetch(`${GAS_URL}?action=get&key=${encodeURIComponent(STORAGE_KEY)}`);
+        const json = await res.json();
+        if (json && json.value) {
+          const parsed = typeof json.value === "string" ? JSON.parse(json.value) : json.value;
+          state = Object.assign(state, parsed);
+          checkNewDay();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          updateStatsUI();
+        }
+        setSyncStatus("已連線私人 Google 試算表 ✓", "emerald");
+      } catch (err) {
+        setSyncStatus("使用本機快取（網路恢復後自動同步）", "amber");
+      }
+    }
+
+    async function saveToCloud() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      setSyncStatus("正在寫入 Google 試算表...", "amber");
+      try {
+        await fetch(GAS_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "set",
+            key: STORAGE_KEY,
+            value: state
+          })
+        });
+        setSyncStatus("已自動儲存至 Google 試算表 ✓", "emerald");
+      } catch (err) {
+        setSyncStatus("雲端同步暫時失敗，已存於本機", "amber");
+      }
+    }
+
+    function startCountdown() {
+      function tick() {
+        const target = new Date(state.targetDate + "T08:30:00").getTime();
+        const now = Date.now();
+        const diff = Math.max(0, target - now);
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const mins = Math.floor((diff / (1000 * 60)) % 60);
+        const secs = Math.floor((diff / 1000) % 60);
+
+        document.getElementById("cd-days").textContent = String(days).padStart(2, '0');
+        document.getElementById("cd-hours").textContent = String(hours).padStart(2, '0');
+        document.getElementById("cd-mins").textContent = String(mins).padStart(2, '0');
+        document.getElementById("cd-secs").textContent = String(secs).padStart(2, '0');
+        document.getElementById("targetDateLabel").textContent = state.targetDate.replace(/-/g, '/');
+      }
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    function selectSubject(sub) {
+      currentSubject = sub;
+      document.querySelectorAll(".subject-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.sub === sub);
+      });
+      document.getElementById("currentSubLabel").textContent = (isRunning ? "專注進行中：" : "準備專注：") + sub;
+    }
+
+    function setMode(mode) {
+      if (isRunning) return;
+      timerMode = mode;
+      elapsedSeconds = 0;
+      document.getElementById("mode-stopwatch").className = mode === "stopwatch"
+        ? "px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40"
+        : "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700";
+      document.getElementById("mode-pomodoro").className = mode === "pomodoro"
+        ? "px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40"
+        : "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700";
+      renderTimerDisplay();
+    }
+
+    function toggleTimer() {
+      const btn = document.getElementById("startPauseBtn");
+      if (isRunning) {
+        clearInterval(timerInterval);
+        isRunning = false;
+        btn.textContent = "▶ 繼續計時";
+        btn.className = "flex-1 max-w-[160px] py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg active:scale-95 transition";
+        document.getElementById("currentSubLabel").textContent = "已暫停：" + currentSubject;
+      } else {
+        isRunning = true;
+        btn.textContent = "⏸ 暫停計時";
+        btn.className = "flex-1 max-w-[160px] py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm shadow-lg active:scale-95 transition";
+        document.getElementById("currentSubLabel").textContent = "專注進行中：" + currentSubject;
+        timerInterval = setInterval(() => {
+          elapsedSeconds++;
+          if (timerMode === "pomodoro" && elapsedSeconds >= pomodoroTotalSeconds) {
+            finishAndSaveSession();
+            return;
+          }
+          renderTimerDisplay();
+        }, 1000);
+      }
+    }
+
+    function renderTimerDisplay() {
+      let displaySec = timerMode === "stopwatch" ? elapsedSeconds : Math.max(0, pomodoroTotalSeconds - elapsedSeconds);
+      const hrs = Math.floor(displaySec / 3600);
+      const mins = Math.floor((displaySec % 3600) / 60);
+      const secs = displaySec % 60;
+      document.getElementById("timerDisplay").textContent =
+        `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function finishAndSaveSession() {
+      if (isRunning) {
+        clearInterval(timerInterval);
+        isRunning = false;
+      }
+      const addedMins = Math.max(1, Math.round(elapsedSeconds / 60));
+      if (elapsedSeconds < 10) {
+        resetTimerOnly();
+        return;
+      }
+      checkNewDay();
+      state.todayMinutes += addedMins;
+      state.subjects[currentSubject] = (state.subjects[currentSubject] || 0) + addedMins;
+
+      resetTimerOnly();
+      updateStatsUI();
+      saveToCloud();
+    }
+
+    function resetTimerOnly() {
+      if (isRunning) {
+        clearInterval(timerInterval);
+        isRunning = false;
+      }
+      elapsedSeconds = 0;
+      renderTimerDisplay();
+      const btn = document.getElementById("startPauseBtn");
+      btn.textContent = "▶ 開始計時";
+      btn.className = "flex-1 max-w-[160px] py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg active:scale-95 transition";
+      document.getElementById("currentSubLabel").textContent = "準備專注：" + currentSubject;
+    }
+
+    function updateStatsUI() {
+      document.getElementById("todayTotalText").textContent = state.todayMinutes;
+      const totalMins = Object.values(state.subjects).reduce((a, b) => a + b, 0);
+      document.getElementById("allTotalText").textContent = (totalMins / 60).toFixed(1);
+
+      const listEl = document.getElementById("subjectStatsList");
+      const maxVal = Math.max(60, ...Object.values(state.subjects));
+      listEl.innerHTML = Object.entries(state.subjects).map(([sub, mins]) => {
+        const pct = Math.min(100, Math.round((mins / maxVal) * 100));
+        return `
+          <div>
+            <div class="flex justify-between text-[11px] mb-1">
+              <span class="text-slate-300 font-medium">${sub}</span>
+              <span class="mono text-sky-300 font-bold">${mins} min</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-sky-400 to-indigo-400 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderTip() {
+      const item = EXAM_TIPS[tipIndex];
+      document.getElementById("tipTag").textContent = item.tag;
+      document.getElementById("tipContent").textContent = item.text;
+    }
+
+    function nextTip() {
+      tipIndex = (tipIndex + 1) % EXAM_TIPS.length;
+      renderTip();
+    }
+
+    function openDateModal() {
+      document.getElementById("examDateInput").value = state.targetDate;
+      document.getElementById("dateModal").classList.remove("hidden");
+      document.getElementById("dateModal").classList.add("flex");
+    }
+    function closeDateModal() {
+      document.getElementById("dateModal").classList.add("hidden");
+      document.getElementById("dateModal").classList.remove("flex");
+    }
+    function saveExamDate() {
+      const val = document.getElementById("examDateInput").value;
+      if (val) {
+        state.targetDate = val;
+        saveToCloud();
+      }
+      closeDateModal();
+    }
+  </script>
+</body>
+</html>
